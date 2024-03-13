@@ -1,11 +1,8 @@
 use std::{fmt::Debug, pin::pin};
 
-use futures::{stream, Stream, StreamExt as _, TryStreamExt as _};
+use futures::{Stream, StreamExt as _};
 use num_traits::Zero;
-use openhedge_arbitrage::integrations::{aevo, dydx, ExchangeMessage};
-use tokio::net::TcpStream;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tungstenite::client::IntoClientRequest;
+use openhedge_arbitrage::integrations::{aevo, connect_websocket, dydx, ExchangeMessage};
 
 #[allow(non_camel_case_types)]
 type u32f32 = fixed::FixedU64<typenum::U32>;
@@ -24,19 +21,6 @@ async fn aevo() {
         aevo::protocol::<u32f32, u32f32>(it, "BTC-PERP")
     }))
     .await;
-}
-
-fn connect_websocket<F, S, T>(
-    to: impl IntoClientRequest + Unpin, // TODO(aatifsyed): make a PR to tokio-tungstenite to relax `Unpin` bound,
-    mut f: F,
-) -> impl Stream<Item = Result<T, tungstenite::Error>>
-where
-    F: FnMut(WebSocketStream<MaybeTlsStream<TcpStream>>) -> S,
-    S: Stream<Item = Result<T, tungstenite::Error>>,
-{
-    stream::once(tokio_tungstenite::connect_async(to))
-        .map_ok(move |(st, _http)| f(st))
-        .try_flatten()
 }
 
 async fn test<PriceT, QuantityT, E>(
