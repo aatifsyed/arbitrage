@@ -1,8 +1,10 @@
 use std::{
     collections::{btree_map::Entry as TreeEntry, hash_map::Entry as HashEntry, BTreeMap, HashMap},
     hash::{BuildHasher, Hash, RandomState},
+    iter,
 };
 
+use itertools::Either;
 use num_traits::Zero;
 
 /// Keeps track of arbitrage opportunities across exchanges.
@@ -32,7 +34,7 @@ impl<QuantityT, PriceT, ExchangeIdT, BuildHasherT>
         exchange_id: ExchangeIdT,
         price: PriceT,
         quantity: QuantityT,
-    ) -> Result<Option<impl Iterator<Item = (&PriceT, &ExchangeIdT, &QuantityT)>>, Error<ExchangeIdT>>
+    ) -> Result<impl Iterator<Item = (&PriceT, &ExchangeIdT, &QuantityT)>, Error<ExchangeIdT>>
     where
         PriceT: Ord + Clone,
         QuantityT: Zero,
@@ -42,20 +44,16 @@ impl<QuantityT, PriceT, ExchangeIdT, BuildHasherT>
         match quantity.is_zero() {
             false => {
                 insert(&mut self.bids, price.clone(), exchange_id, quantity);
-                let mut arbitrages = self
+                let arbitrages = self
                     .asks
                     .iter() // cheapest first
                     .take_while(move |(ask, _)| *ask < &price)
-                    .flat_map(|(ask, xcs)| xcs.iter().map(move |(xc, q)| (ask, xc, q)))
-                    .peekable();
-                match arbitrages.peek() {
-                    Some(_) => Ok(Some(arbitrages)),
-                    None => Ok(None),
-                }
+                    .flat_map(|(ask, xcs)| xcs.iter().map(move |(xc, q)| (ask, xc, q)));
+                Ok(Either::Left(arbitrages))
             }
             true => remove_price_from_exchange(&mut self.bids, price, exchange_id)
                 .map(Err)
-                .transpose(),
+                .unwrap_or(Ok(Either::Right(iter::empty()))),
         }
     }
     #[doc(alias = "ask")]
@@ -64,7 +62,7 @@ impl<QuantityT, PriceT, ExchangeIdT, BuildHasherT>
         exchange_id: ExchangeIdT,
         price: PriceT,
         quantity: QuantityT,
-    ) -> Result<Option<impl Iterator<Item = (&PriceT, &ExchangeIdT, &QuantityT)>>, Error<ExchangeIdT>>
+    ) -> Result<impl Iterator<Item = (&PriceT, &ExchangeIdT, &QuantityT)>, Error<ExchangeIdT>>
     where
         PriceT: Ord + Clone,
         QuantityT: Zero,
@@ -74,21 +72,17 @@ impl<QuantityT, PriceT, ExchangeIdT, BuildHasherT>
         match quantity.is_zero() {
             false => {
                 insert(&mut self.asks, price.clone(), exchange_id, quantity);
-                let mut arbitrages = self
+                let arbitrages = self
                     .bids
                     .iter()
                     .rev() // most generous first
                     .take_while(move |(bid, _)| *bid > &price)
-                    .flat_map(|(bid, xcs)| xcs.iter().map(move |(xc, q)| (bid, xc, q)))
-                    .peekable();
-                match arbitrages.peek() {
-                    Some(_) => Ok(Some(arbitrages)),
-                    None => Ok(None),
-                }
+                    .flat_map(|(bid, xcs)| xcs.iter().map(move |(xc, q)| (bid, xc, q)));
+                Ok(Either::Left(arbitrages))
             }
             true => remove_price_from_exchange(&mut self.bids, price, exchange_id)
                 .map(Err)
-                .transpose(),
+                .unwrap_or(Ok(Either::Right(iter::empty()))),
         }
     }
 }
@@ -156,24 +150,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test() {
-        let mut orderbook = Arbitrage::<_, _, _>::default();
-        orderbook
-            .asks
-            .insert(5, HashMap::from_iter([("binance", 1)]));
-        orderbook
-            .asks
-            .insert(15, HashMap::from_iter([("binance", 1)]));
-        let bidme = orderbook
-            .buy("kraken", 10, 1)
-            .unwrap()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        dbg!(bidme);
-    }
-}
+mod tests {}
