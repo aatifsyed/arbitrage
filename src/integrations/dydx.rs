@@ -20,9 +20,21 @@ macro_rules! bail {
     };
 }
 
-pub async fn protocol<PriceT, QuantityT>(
+pub fn protocol<PriceT, QuantityT>(
+    s: impl Stream<Item = WsResult<WsMessage>> + Sink<WsMessage, Error = WsError> + Unpin,
+    id: impl Into<String>,
+) -> impl Stream<Item = WsResult<ExchangeMessage<PriceT, QuantityT>>>
+where
+    PriceT: DeserializeOwned,
+    QuantityT: DeserializeOwned,
+{
+    // return a bare stream rather than a future resolving to a stream...
+    stream::once(_protocol(s, id.into())).flatten()
+}
+
+async fn _protocol<PriceT, QuantityT>(
     mut s: impl Stream<Item = WsResult<WsMessage>> + Sink<WsMessage, Error = WsError> + Unpin,
-    id: &str,
+    id: String,
 ) -> impl Stream<Item = WsResult<ExchangeMessage<PriceT, QuantityT>>>
 where
     PriceT: DeserializeOwned,
