@@ -4,23 +4,19 @@
 
 use std::io;
 
-use futures::{
-    future::{self, Either},
-    stream, Sink, Stream, StreamExt as _, TryStreamExt as _,
-};
+use futures::{future::Either, stream, Sink, Stream, StreamExt as _, TryStreamExt as _};
 use io_extra::IoErrorExt as _;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::json;
 
-use super::{recv_json, send_json, ExchangeMessage, WsError, WsMessage, WsResult};
+use super::{bail, recv_json, send_json, ExchangeMessage, WsError, WsMessage, WsResult};
 
-macro_rules! bail {
-    ($expr:expr) => {
-        return Either::Left(stream::once(future::ready(Err(WsError::from($expr)))))
-    };
-}
-
+/// Input channel should NOT have had messages sent over it...
+/// `id` should be e.g `BTC-USD`.
 pub fn protocol<PriceT, QuantityT>(
+    // TODO(aatifsyed): could relax `Unpin` bound if we were willing to `Box::pin`
+    //                  in `stream::try_unfold`.
+    //                  This would also allow us to return an `Unpin` stream...
     s: impl Stream<Item = WsResult<WsMessage>> + Sink<WsMessage, Error = WsError> + Unpin,
     id: impl Into<String>,
 ) -> impl Stream<Item = WsResult<ExchangeMessage<PriceT, QuantityT>>>
@@ -32,6 +28,9 @@ where
     stream::once(_protocol(s, id.into())).flatten()
 }
 
+// TODO(aatifsyed): could check other invariants on borrowed messages...:
+// - channel id doesn't change
+// - sequence number is monotonic...
 async fn _protocol<PriceT, QuantityT>(
     mut s: impl Stream<Item = WsResult<WsMessage>> + Sink<WsMessage, Error = WsError> + Unpin,
     id: String,
@@ -117,9 +116,9 @@ enum Message<PriceT, QuantityT> {
 ))]
 struct ChannelData<PriceT, QuantityT> {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bids: Vec<(PriceT, QuantityT)>,
+    bids: Vec<(PriceT, QuantityT)>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asks: Vec<(PriceT, QuantityT)>,
+    asks: Vec<(PriceT, QuantityT)>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -129,28 +128,23 @@ struct ChannelData<PriceT, QuantityT> {
 ))]
 struct Subscribed<PriceT, QuantityT> {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bids: Vec<Named<PriceT, QuantityT>>,
+    bids: Vec<Named<PriceT, QuantityT>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asks: Vec<Named<PriceT, QuantityT>>,
+    asks: Vec<Named<PriceT, QuantityT>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct Named<PriceT, QuantityT> {
-    pub price: PriceT,
-    pub size: QuantityT,
+    price: PriceT,
+    size: QuantityT,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Debug;
-
-    use serde::de::DeserializeOwned;
     use serde_json::json;
 
     use super::*;
-
-    #[allow(non_camel_case_types)]
-    type u16f16 = fixed::FixedU32<typenum::U16>;
+    use crate::integrations::{round_trip, u16f16};
 
     #[test]
     fn deser() {
@@ -181,17 +175,5 @@ mod tests {
             }),
             json!({"type": "subscribed", "contents": {"bids": [{"price": "123", "size": "456"}, {"price": "789", "size": "123"}]}}),
         )
-    }
-
-    #[track_caller]
-    fn round_trip<T>(repr: T, json: serde_json::Value)
-    where
-        T: DeserializeOwned + Serialize + PartialEq + Debug,
-    {
-        let repr2json = serde_json::to_value(&repr).unwrap();
-        assert_eq!(repr2json, json);
-
-        let json2repr = serde_json::from_value(json).unwrap();
-        assert_eq!(repr, json2repr);
     }
 }

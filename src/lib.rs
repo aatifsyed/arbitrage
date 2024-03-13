@@ -14,6 +14,9 @@ pub mod integrations {
     use io_extra::IoErrorExt as _;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+    pub mod aevo;
+    pub mod dydx;
+
     type WsMessage = tungstenite::Message;
     type WsError = tungstenite::Error;
     type WsResult<T> = tungstenite::Result<T>;
@@ -62,7 +65,32 @@ pub mod integrations {
         }
         .map_err(|it| WsError::Io(io::Error::invalid_data(it)))
     }
-    pub mod dydx;
+
+    macro_rules! bail {
+        ($expr:expr) => {
+            return futures::future::Either::Left(futures::stream::once(futures::future::ready(
+                Err($crate::integrations::WsError::from($expr)),
+            )))
+        };
+    }
+    pub(crate) use bail;
+
+    #[cfg(test)]
+    #[allow(non_camel_case_types)]
+    type u16f16 = fixed::FixedU32<typenum::U16>;
+
+    #[cfg(test)]
+    #[track_caller]
+    fn round_trip<T>(repr: T, json: serde_json::Value)
+    where
+        T: DeserializeOwned + Serialize + PartialEq + std::fmt::Debug,
+    {
+        let repr2json = serde_json::to_value(&repr).unwrap();
+        assert_eq!(repr2json, json);
+
+        let json2repr = serde_json::from_value(json).unwrap();
+        assert_eq!(repr, json2repr);
+    }
 }
 
 /// Keeps track of arbitrage opportunities across exchanges.
