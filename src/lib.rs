@@ -7,6 +7,64 @@ use std::{
 use itertools::Either;
 use num_traits::Zero;
 
+pub mod integrations {
+    use std::{io, pin::pin};
+
+    use futures::{future::Either, Sink, SinkExt as _, Stream, TryStreamExt as _};
+    use io_extra::IoErrorExt as _;
+    use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+    type WsMessage = tungstenite::Message;
+    type WsError = tungstenite::Error;
+    type WsResult<T> = tungstenite::Result<T>;
+
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+    pub enum ExchangeMessage<PriceT, QuantityT> {
+        Buy { price: PriceT, quantity: QuantityT },
+        Sell { price: PriceT, quantity: QuantityT },
+    }
+
+    async fn send_json(
+        s: impl Sink<WsMessage, Error = WsError>,
+        t: impl Serialize,
+    ) -> WsResult<()> {
+        let msg = serde_json::to_vec(&t).map_err(|e| WsError::Io(io::Error::invalid_input(e)))?;
+        pin!(s).send(WsMessage::Binary(msg)).await
+    }
+
+    async fn recv_json<T: DeserializeOwned>(
+        s: impl Stream<Item = WsResult<WsMessage>>,
+    ) -> WsResult<T> {
+        let mut s = pin!(s);
+        let message = loop {
+            match s.try_next().await {
+                Ok(Some(WsMessage::Binary(it))) => break Either::Left(it),
+                Ok(Some(WsMessage::Text(it))) => break Either::Right(it),
+                Ok(Some(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue, // TODO(aatifsyed): do we need to respond to pings manually?
+                Ok(Some(WsMessage::Frame(_))) => continue, // TODO(aatifsyed): is this unreachable?
+                Ok(Some(WsMessage::Close(_)) | None) => {
+                    return Err(WsError::Io(io::Error::unexpected_eof(
+                        "underlying stream ended early",
+                    )))
+                }
+                Err(e) => return Err(e),
+            };
+        };
+        deserialize_json(&message)
+    }
+
+    fn deserialize_json<'a, T: Deserialize<'a>>(
+        src: &'a Either<Vec<u8>, String>, // allow borrowing from the input
+    ) -> WsResult<T> {
+        match src {
+            Either::Left(it) => serde_json::from_slice(it),
+            Either::Right(it) => serde_json::from_str(it), // skip UTF-8 validation
+        }
+        .map_err(|it| WsError::Io(io::Error::invalid_data(it)))
+    }
+    pub mod dydx;
+}
+
 /// Keeps track of arbitrage opportunities across exchanges.
 #[derive(Debug, Clone)]
 pub struct ArbitrageFinder<QuantityT, PriceT, ExchangeIdT, BuildHasherT = RandomState> {
