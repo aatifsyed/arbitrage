@@ -1,4 +1,4 @@
-use std::{io, pin::pin};
+use std::{fmt::Display, io, pin::pin};
 
 use futures::{future::Either, stream, Sink, SinkExt as _, Stream, TryStreamExt as _};
 use io_extra::IoErrorExt as _;
@@ -7,8 +7,8 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::client::IntoClientRequest;
 
-pub mod aevo;
-pub mod dydx;
+mod aevo;
+mod dydx;
 
 type WsMessage = tungstenite::Message;
 type WsError = tungstenite::Error;
@@ -20,16 +20,39 @@ pub enum ExchangeMessage<PriceT, QuantityT> {
     Sell { price: PriceT, quantity: QuantityT },
 }
 
-pub fn connect_websocket<F, S, T>(
+pub fn dydx<PriceT, QuantityT>(
+    id: impl Into<String>, // "BTC-USD"
+) -> impl Stream<Item = tungstenite::Result<ExchangeMessage<PriceT, QuantityT>>>
+where
+    PriceT: DeserializeOwned,
+    QuantityT: DeserializeOwned,
+{
+    connect_websocket("wss://indexer.dydx.trade/v4/ws", move |it| {
+        dydx::protocol(it, id.into())
+    })
+}
+
+pub fn aevo<PriceT, QuantityT>(
+    id: impl Display, // "BTC-PERP"
+) -> impl Stream<Item = tungstenite::Result<ExchangeMessage<PriceT, QuantityT>>>
+where
+    PriceT: DeserializeOwned,
+    QuantityT: DeserializeOwned,
+{
+    connect_websocket("wss://ws.aevo.xyz", move |it| aevo::protocol(it, id))
+}
+
+fn connect_websocket<F, S, T>(
     to: impl IntoClientRequest + Unpin, // TODO(aatifsyed): make a PR to tokio-tungstenite to relax `Unpin` bound,
-    mut f: F,
+    f: F,
 ) -> impl Stream<Item = Result<T, tungstenite::Error>>
 where
-    F: FnMut(WebSocketStream<MaybeTlsStream<TcpStream>>) -> S,
+    F: FnOnce(WebSocketStream<MaybeTlsStream<TcpStream>>) -> S,
     S: Stream<Item = Result<T, tungstenite::Error>>,
 {
+    let mut f = Some(f);
     stream::once(tokio_tungstenite::connect_async(to))
-        .map_ok(move |(st, _http)| f(st))
+        .map_ok(move |(st, _http)| f.take().expect("stream::once only yields once")(st))
         .try_flatten()
 }
 
