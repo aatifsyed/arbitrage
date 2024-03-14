@@ -32,7 +32,7 @@ impl<QuantityT, PriceT, ExchangeIdT, BuildHasherT>
 where
     PriceT: Ord + Clone,
     QuantityT: Zero,
-    ExchangeIdT: Eq + Hash,
+    ExchangeIdT: Eq + Hash + Clone,
     BuildHasherT: BuildHasher + Default,
 {
     #[doc(alias = "bid")]
@@ -44,12 +44,13 @@ where
     ) -> Result<impl Iterator<Item = (&ExchangeIdT, &PriceT, &QuantityT)>, Error<ExchangeIdT>> {
         match quantity.is_zero() {
             false => {
-                insert(&mut self.bids, price.clone(), exchange_id, quantity);
+                insert(&mut self.bids, price.clone(), exchange_id.clone(), quantity);
                 let arbitrages = self
                     .asks
                     .iter() // cheapest first
                     .take_while(move |(ask, _)| *ask < &price)
-                    .flat_map(|(ask, xcs)| xcs.iter().map(move |(xc, q)| (xc, ask, q)));
+                    .flat_map(|(ask, xcs)| xcs.iter().map(move |(xc, q)| (xc, ask, q)))
+                    .filter(move |(xc, _, _)| *xc != &exchange_id);
                 Ok(Either::Left(arbitrages))
             }
             true => remove_price_from_exchange(&mut self.bids, price, exchange_id)
@@ -66,13 +67,14 @@ where
     ) -> Result<impl Iterator<Item = (&ExchangeIdT, &PriceT, &QuantityT)>, Error<ExchangeIdT>> {
         match quantity.is_zero() {
             false => {
-                insert(&mut self.asks, price.clone(), exchange_id, quantity);
+                insert(&mut self.asks, price.clone(), exchange_id.clone(), quantity);
                 let arbitrages = self
                     .bids
                     .iter()
                     .rev() // most generous first
                     .take_while(move |(bid, _)| *bid > &price)
-                    .flat_map(|(bid, xcs)| xcs.iter().map(move |(xc, q)| (xc, bid, q)));
+                    .flat_map(|(bid, xcs)| xcs.iter().map(move |(xc, q)| (xc, bid, q)))
+                    .filter(move |(xc, _, _)| *xc != &exchange_id);
                 Ok(Either::Left(arbitrages))
             }
             true => remove_price_from_exchange(&mut self.bids, price, exchange_id)
