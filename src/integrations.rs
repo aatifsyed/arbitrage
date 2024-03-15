@@ -1,8 +1,14 @@
-use std::{fmt::Display, io, pin::pin};
+use std::{
+    fmt::{self, Display},
+    io,
+    pin::pin,
+};
 
+use bstr::BString;
 use futures::{future::Either, stream, Sink, SinkExt as _, Stream, TryStreamExt as _};
 use io_extra::IoErrorExt as _;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_path_to_error::Path;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::client::IntoClientRequest;
@@ -84,10 +90,55 @@ fn deserialize_json<'a, T: Deserialize<'a>>(
     src: &'a Either<Vec<u8>, String>, // allow borrowing from the input
 ) -> WsResult<T> {
     match src {
-        Either::Left(it) => serde_json::from_slice(it),
-        Either::Right(it) => serde_json::from_str(it), // skip UTF-8 validation
+        Either::Left(it) => {
+            serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_slice(it))
+        }
+        // skip UTF-8 validation where possible
+        Either::Right(it) => {
+            serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_str(it))
+        }
     }
-    .map_err(|it| WsError::Io(io::Error::invalid_data(it)))
+    .map_err(|it| {
+        WsError::Io(io::Error::invalid_data(SerializationError {
+            path: it.path().clone(),
+            inner: it.into_inner(),
+            src: match src {
+                Either::Left(it) => it[..].into(),
+                Either::Right(it) => it[..].into(),
+            },
+            ty: {
+                let name = std::any::type_name::<T>();
+                match name.split_once('<') {
+                    Some((name, _)) => name,
+                    None => name,
+                }
+            },
+        }))
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+struct SerializationError {
+    path: Path,
+    inner: serde_json::Error,
+    src: BString,
+    ty: &'static str,
+}
+
+impl fmt::Display for SerializationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            path,
+            inner,
+            src,
+            ty,
+        } = self;
+        f.write_fmt(format_args!("couldn't serialize a {}\n\n", ty))?;
+        f.write_fmt(format_args!("error: {}\n", inner))?;
+        f.write_fmt(format_args!("location: {}\n", path))?;
+        f.write_fmt(format_args!("source text: {}\n", src))?;
+        Ok(())
+    }
 }
 
 macro_rules! bail {
