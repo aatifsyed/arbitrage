@@ -10,6 +10,8 @@ use num_traits::Zero;
 pub mod integrations;
 
 /// Keeps track of arbitrage opportunities across exchanges.
+/// - Generic over value types - bring your own numbers.
+/// - Wide - supports an arbitrary number of exchanges, with a pluggable hasher for speed.
 #[derive(Debug, Clone)]
 pub struct ArbitrageFinder<QuantityT, PriceT, ExchangeIdT, BuildHasherT = RandomState> {
     #[doc(alias = "buys")]
@@ -35,6 +37,9 @@ where
     ExchangeIdT: Eq + Hash + Clone,
     BuildHasherT: BuildHasher + Default,
 {
+    /// Returns sell orders on other exchanges that are arbitrage opportunities.
+    ///
+    /// The special price of 0 indicates that a price was removed on an exchange.
     #[doc(alias = "bid")]
     pub fn buy(
         &mut self,
@@ -58,6 +63,9 @@ where
                 .unwrap_or(Ok(Either::Right(iter::empty()))),
         }
     }
+    /// Returns buy orders on other exchanges that are arbitrage opportunities.
+    ///
+    /// The special price of 0 indicates that a price was removed on an exchange.
     #[doc(alias = "ask")]
     pub fn sell(
         &mut self,

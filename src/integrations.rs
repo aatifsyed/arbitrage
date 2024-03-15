@@ -1,3 +1,6 @@
+//! Exchange-specific integrations that expose a unified messaging interface.
+//!
+//! See submodules for protocol implementations and diagrams.
 use std::{
     fmt::{self, Display},
     io,
@@ -26,8 +29,9 @@ pub enum ExchangeMessage<PriceT, QuantityT> {
     Sell { price: PriceT, quantity: QuantityT },
 }
 
+/// `id` should be e.g `"BTC-USD"`
 pub fn dydx<PriceT, QuantityT>(
-    id: impl Into<String>, // "BTC-USD"
+    id: impl Into<String>,
 ) -> impl Stream<Item = tungstenite::Result<ExchangeMessage<PriceT, QuantityT>>>
 where
     PriceT: DeserializeOwned,
@@ -38,8 +42,9 @@ where
     })
 }
 
+/// `id` should be e.g `"BTC-PERP"`
 pub fn aevo<PriceT, QuantityT>(
-    id: impl Display, // "BTC-PERP"
+    id: impl Display,
 ) -> impl Stream<Item = tungstenite::Result<ExchangeMessage<PriceT, QuantityT>>>
 where
     PriceT: DeserializeOwned,

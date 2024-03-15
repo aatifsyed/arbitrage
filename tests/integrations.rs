@@ -1,3 +1,7 @@
+//! Both integrations right now start off with an orderbook snapshot.
+//! We know we've successfully processed that once we start seeing empty price
+//! levels.
+
 use std::{fmt::Debug, pin::pin};
 
 use futures::{Stream, StreamExt as _};

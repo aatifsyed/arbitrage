@@ -81,6 +81,8 @@ async fn _main(no_fail_fast: bool) {
             }
         };
 
+        // NOTE: we don't actually do any trading here, so we might farm a given arbitrage opportunity twice.
+        //       but this is just a demo...
         match msg {
             ExchangeMessage::Buy { price, quantity } => {
                 if let Ok(Some((sell_exchange, sell_price, sell_quantity))) =
