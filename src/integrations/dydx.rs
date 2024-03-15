@@ -28,6 +28,31 @@ where
     stream::once(_protocol(s, id.into())).flatten()
 }
 
+/// ```text
+///           ┌────────┐          ┌───┐          
+///           │exchange│          │bot│          
+///           └───┬────┘          └─┬─┘          
+///               │    connected    │            
+///               │ ───────────────>│            
+///               │                 │            
+///               │    subscribe    │            
+///               │ <───────────────│            
+///               │                 │            
+///               │    snapshot     │            
+///               │ ───────────────>│            
+///               │                 │            
+///               │                 │            
+/// ╔═══════╤═════╪═════════════════╪═══════════╗
+/// ║ LOOP  │  infinite             │           ║
+/// ╟───────┘     │                 │           ║
+/// ║             │     update      │           ║
+/// ║             │  ─ ─ ─ ─ ─ ─ ─ >│           ║
+/// ╚═════════════╪═════════════════╪═══════════╝
+///           ┌───┴────┐          ┌─┴─┐          
+///           │exchange│          │bot│          
+///           └────────┘          └───┘          
+/// ```
+/// <https://www.plantuml.com/plantuml/uml/POv12WD120Jlli8Fv0Dx2FiLnp5POQF3wa2U7tCOSeW7eRkheVT8kdA-Jf0t7sHFmTiTc-U6x6R2AHrAVjr5R1Yp1L_QvByLHYCEJpZT1wezr3G5iEx7BdYEJXMATTZhrOmF>
 // TODO(aatifsyed): could check other invariants on borrowed messages...:
 // - channel id doesn't change
 // - sequence number is monotonic...

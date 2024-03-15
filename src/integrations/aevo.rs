@@ -22,6 +22,38 @@ where
     stream::once(_protocol(s, id)).flatten()
 }
 
+/// Note that aevo documents a 15 minute timeout, but I've not seen this in practice.
+///
+/// ```text
+///                     ┌───┐          ┌────────┐                    
+///                     │bot│          │exchange│                    
+///                     └─┬─┘          └───┬────┘                    
+///                       │   subscribe    │                         
+///                       │────────────────>                         
+///                       │                │                         
+///                       │spurious message│                         
+///                       │<────────────────                         
+///                       │                │                         
+///                       │                │                         
+/// ╔═══════╤═════════════╪════════════════╪════════════════════════╗
+/// ║ LOOP  │  infinite   │                │                        ║
+/// ╟───────┘             │                │                        ║
+/// ║                     │    snapshot    │                        ║
+/// ║                     │<────────────────                        ║
+/// ║                     │                │                        ║
+/// ║                     │                │                        ║
+/// ║         ╔═══════╤═══╪════════════════╪══════════════╗         ║
+/// ║         ║ LOOP  │  finite/updates    │              ║         ║
+/// ║         ╟───────┘   │                │              ║         ║
+/// ║         ║           │     update     │              ║         ║
+/// ║         ║           │<─ ─ ─ ─ ─ ─ ─ ─               ║         ║
+/// ║         ╚═══════════╪════════════════╪══════════════╝         ║
+/// ╚═════════════════════╪════════════════╪════════════════════════╝
+///                     ┌─┴─┐          ┌───┴────┐                    
+///                     │bot│          │exchange│                    
+///                     └───┘          └────────┘                    
+/// ```
+/// <https://www.plantuml.com/plantuml/uml/POv12WCn24NtEOKNADrtKUOgoOoT4MOqH8KUloObYz90NFp_dhYevMP-dQc8mUq9-5wFp3i-GBtesgXWcbdl0ukgUYDnXGjLyuxf5Ab0_28cmmJn_XtELG-nqGx-Iz-zRjbGH_vhJhKJSorlgVybHbpz0G00>
 async fn _protocol<PriceT, QuantityT>(
     mut s: impl Stream<Item = WsResult<WsMessage>> + Sink<WsMessage, Error = WsError> + Unpin,
     id: impl Display,
@@ -54,7 +86,7 @@ where
                         ))),
                         Ok(Data {
                             data: DataInner::Snapshot { .. },
-                        }) => Ok(Some((Either::Right(stream::empty()), it))),
+                        }) => Ok(Some((Either::Right(stream::empty()), it))), // TODO(aatifsyed): could check that snapshot matches here
                         Err(e) => Err(e),
                     }
                 })
