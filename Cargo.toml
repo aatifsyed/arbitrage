@@ -18,4 +18,6 @@ tokio-tungstenite = { version = "0.21.0", features = [
 tungstenite = "0.21.0"
 futures = "0.3.30"
 io-extra = "0.1.0"
-tokio = { version = "1.36.0", features = ["macros", "rt"] }
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing = "0.1.40"
